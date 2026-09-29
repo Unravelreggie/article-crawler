@@ -1,0 +1,79 @@
+name: article-crawler
+services:
+  db:
+    restart: unless-stopped
+    image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE}
+    environment:
+      POSTGRES_DB: literature
+      POSTGRES_USER: literature
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - ${DATA_ROOT:?Set DATA_ROOT}/postgres:/var/lib/postgresql/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U literature -d literature"]
+      interval: 10s
+      retries: 5
+  redis:
+    restart: unless-stopped
+    image: ${REDIS_IMAGE:?Set REDIS_IMAGE}
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${DATA_ROOT:?Set DATA_ROOT}/redis:/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+  rustfs:
+    restart: unless-stopped
+    image: ${RUSTFS_IMAGE:?Set RUSTFS_IMAGE}
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY}
+    volumes:
+      - ${DATA_ROOT:?Set DATA_ROOT}/rustfs:/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:9000/health >/dev/null"]
+      interval: 10s
+      retries: 5
+  api:
+    restart: unless-stopped
+    image: ${API_IMAGE:?Set API_IMAGE}
+    env_file: .env
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      rustfs: {condition: service_healthy}
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      retries: 5
+  worker:
+    restart: unless-stopped
+    image: ${API_IMAGE:?Set API_IMAGE}
+    env_file: .env
+    command: ["celery", "-A", "app.jobs.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [app]
+  web:
+    restart: unless-stopped
+    image: ${WEB_IMAGE:?Set WEB_IMAGE}
+    ports:
+      - "${BIND_IP:-127.0.0.1}:4183:80"
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [app, authentik]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      retries: 5
+networks:
+  app: {}
+  authentik:
+    external: true
+    name: authentik-internal

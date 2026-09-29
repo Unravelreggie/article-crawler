@@ -20,6 +20,10 @@ React + TypeScript + Vite；FastAPI + Pydantic + SQLAlchemy + Alembic；PostgreS
 
 首次启动自动执行 Alembic 迁移。变更前备份 PostgreSQL 和 RustFS 数据卷；恢复时先恢复两者，再在同一代码版本上启动。docker compose down -v 会删除数据，不用于普通停止。
 
+## CRDC 部署
+
+生产部署定义和 Authentik 接入步骤见 [deploy/CRDC.md](deploy/CRDC.md)。GitHub Actions 生成固定 linux/amd64 镜像；CRDC 仅拉取镜像，不构建源码。
+
 ## 开发与检查
 
 在 Mac mini 的本项目目录：

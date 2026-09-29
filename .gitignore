@@ -12,3 +12,4 @@ dist/
 *.xlsx
 *.csv
 data/
+*.env
