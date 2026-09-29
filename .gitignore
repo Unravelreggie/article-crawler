@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+dist/
+.DS_Store
+*.pdf
+*.sqlite3
+*.db
+*.xlsx
+*.csv
+data/

@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: literature
+      POSTGRES_USER: literature
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U literature -d literature"]
+      interval: 10s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:9000/health >/dev/null"]
+      interval: 10s
+      retries: 5
+  api:
+    build: ./backend
+    env_file: .env
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rustfs: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      retries: 5
+  worker:
+    build: ./backend
+    env_file: .env
+    command: ["celery", "-A", "app.jobs.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    depends_on:
+      api: { condition: service_healthy }
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:9200:80"
+    depends_on:
+      api: { condition: service_healthy }
+volumes:
+  postgres_data:
+  redis_data:
+  rustfs_data:
